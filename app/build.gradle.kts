@@ -5,10 +5,9 @@ plugins {
 
 android {
     namespace = "com.example.glicemixii"
+    // 37: exigido pela androidx.core 1.19. Só afeta a compilação; o app continua rodando do Android 8.0 em diante.
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version = release(37)
     }
 
     defaultConfig {
