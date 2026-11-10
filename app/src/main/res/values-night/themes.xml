@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="glicemix_primaria_noite">#5BD5CD</color>
+    <color name="glicemix_fundo_noite">#0F1417</color>
+    <style name="Tema.Glicemix" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/glicemix_primaria_noite</item>
+        <item name="android:colorPrimary">@color/glicemix_primaria_noite</item>
+        <item name="android:windowBackground">@color/glicemix_fundo_noite</item>
+    </style>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="glicemix_primaria">#0E7C86</color>
+    <color name="glicemix_fundo">#F3F5F8</color>
+    <color name="glicemix_icone_fundo">#0F2A33</color>
+    <!-- Tema da janela; a interface em si é desenhada pelo Compose. Os seletores de data/hora usam a cor de destaque. -->
+    <style name="Tema.Glicemix" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/glicemix_primaria</item>
+        <item name="android:colorPrimary">@color/glicemix_primaria</item>
+        <item name="android:windowBackground">@color/glicemix_fundo</item>
+    </style>
+</resources>
