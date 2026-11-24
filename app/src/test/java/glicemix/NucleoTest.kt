@@ -92,4 +92,25 @@ class NucleoTest {
         assertEquals(3, r.n); assertEquals(6.0, r.mediana, 0.0); assertEquals(1, r.abaixo)
         assertEquals(null, Episodios.referenciaDose(eps.take(2), TipoRefeicao.ALMOCO, 60.0, cfg, base))
     }
+
+    @Test fun exameCalculaVencimentoESituacao() {
+        val hoje = java.time.LocalDate.of(2026, 11, 24)
+        val e = Exame(nome = "HbA1c", intervaloMeses = 3, ultimo = java.time.LocalDate.of(2026, 8, 24))
+        assertEquals(java.time.LocalDate.of(2026, 11, 24), e.proximo)
+        assertEquals(SituacaoExame.PROXIMO, e.situacao(hoje))
+        assertEquals(SituacaoExame.ATRASADO, e.copy(ultimo = java.time.LocalDate.of(2026, 7, 1)).situacao(hoje))
+        assertEquals(SituacaoExame.EM_DIA, e.copy(ultimo = java.time.LocalDate.of(2026, 11, 1)).situacao(hoje))
+        assertEquals(SituacaoExame.SEM_DATA, e.copy(ultimo = null).situacao(hoje))
+        assertEquals(e.copy(nome = "Fundo; de olho"), ExamesCodec.decodificar(ExamesCodec.codificar(e.copy(nome = "Fundo; de olho"))))
+        assertEquals(null, ExamesCodec.decodificar("lixo"))
+    }
+
+    @Test fun avisoDeExameAntecedeOVencimento() {
+        val agora = LocalDateTime.of(2026, 11, 24, 15, 0)
+        val longe = Exame(nome = "x", intervaloMeses = 12, ultimo = java.time.LocalDate.of(2026, 3, 1))
+        assertEquals(LocalDateTime.of(2027, 1, 30, 9, 0), glicemix.lembretes.ExamesRepo.quandoAvisar(longe, agora))
+        val perto = longe.copy(ultimo = java.time.LocalDate.of(2025, 12, 10))
+        assertEquals(LocalDateTime.of(2026, 11, 30, 9, 0), glicemix.lembretes.ExamesRepo.quandoAvisar(perto, agora)) // próxima segunda
+        assertEquals(null, glicemix.lembretes.ExamesRepo.quandoAvisar(longe.copy(ativo = false), agora))
+    }
 }

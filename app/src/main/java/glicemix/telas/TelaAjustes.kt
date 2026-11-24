@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,19 +80,32 @@ fun TelaAjustes(vm: GlicemixViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SecaoLembretes(vm)
+        SecaoExames(vm)
 
         Cartao(titulo = "Levar para a consulta", subtitulo = "O relatório usa o período escolhido no topo da tela (${vm.periodo.rotulo.lowercase()}).") {
             Button(onClick = {
+                try {
+                    // um toque: gera o PDF do período e já abre a folha de envio (WhatsApp, e-mail, Drive…)
+                    compartilhar(ctx, vm.gerarRelatorio(), "application/pdf", "Glicemix – relatório ${vm.periodo.rotulo.lowercase()}",
+                        "Segue o relatório de glicemia (${vm.periodo.rotulo.lowercase()}) gerado pelo Glicemix.")
+                } catch (e: Exception) {
+                    aviso = Aviso("Não foi possível gerar o relatório", e.message ?: e.toString())
+                }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Share, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Enviar relatório ao médico (PDF)")
+            }
+            OutlinedButton(onClick = {
                 aviso = try {
-                    val pdf = vm.gerarRelatorio()
-                    Aviso("Relatório pronto", "O relatório em PDF do período foi gerado. Você pode abri-lo ou enviá-lo ao seu médico.", pdf)
+                    Aviso("Relatório pronto", "O relatório em PDF do período foi gerado. Você pode abri-lo ou enviá-lo ao seu médico.", vm.gerarRelatorio())
                 } catch (e: Exception) {
                     Aviso("Não foi possível gerar o relatório", e.message ?: e.toString())
                 }
-            }, modifier = Modifier.fillMaxWidth()) {
+            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Icon(Icons.Outlined.Description, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Relatório em PDF")
+                Text("Ver o relatório antes de enviar")
             }
             OutlinedButton(onClick = { compartilhar(ctx, vm.exportarCsv(), "text/csv", "Glicemix – meus registros") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Icon(Icons.Outlined.TableChart, contentDescription = null)
@@ -234,11 +248,12 @@ private fun CampoLimite(valor: String, rotulo: String, modifier: Modifier, onMud
 private fun uriDe(ctx: Context, arquivo: File) = FileProvider.getUriForFile(ctx, ctx.packageName + ".arquivos", arquivo)
 
 /** Abre a folha de compartilhamento (e-mail, WhatsApp, Drive…). */
-private fun compartilhar(ctx: Context, arquivo: File, tipo: String, assunto: String) {
+private fun compartilhar(ctx: Context, arquivo: File, tipo: String, assunto: String, texto: String? = null) {
     val envio = Intent(Intent.ACTION_SEND).apply {
         type = tipo
         putExtra(Intent.EXTRA_STREAM, uriDe(ctx, arquivo))
         putExtra(Intent.EXTRA_SUBJECT, assunto)
+        if (texto != null) putExtra(Intent.EXTRA_TEXT, texto)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     ctx.startActivity(Intent.createChooser(envio, "Enviar ${arquivo.name}"))

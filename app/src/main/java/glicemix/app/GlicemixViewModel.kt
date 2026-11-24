@@ -120,19 +120,42 @@ class GlicemixViewModel(app: Application) : AndroidViewModel(app) {
     fun dosesDe(refeicaoId: String): List<Dose> = repo.doses.filter { it.refeicaoId == refeicaoId }
 
     /** Refeição já feita antes, para repetir com um toque (carboidratos e insulina costumam ser os mesmos). */
-    data class ModeloRefeicao(val descricao: String, val tipo: TipoRefeicao, val carboidratos: Double, val insulina: String, val bolus: Double, val itens: List<ItemRefeicao> = emptyList())
+    data class ModeloRefeicao(
+        val descricao: String, val tipo: TipoRefeicao, val carboidratos: Double, val insulina: String, val bolus: Double,
+        val itens: List<ItemRefeicao> = emptyList(), val favorita: Boolean = false,
+    )
 
-    /** Refeições distintas (pela descrição), da mais recente para a mais antiga. */
+    private val prefsFavoritas = app.getSharedPreferences("glicemix", android.content.Context.MODE_PRIVATE)
+    private fun chaveFavorita(descricao: String) = descricao.trim().lowercase()
+
+    fun ehFavorita(descricao: String): Boolean =
+        descricao.isNotBlank() && chaveFavorita(descricao) in prefsFavoritas.getStringSet("refeicoes_favoritas", emptySet()).orEmpty()
+
+    /** Marca ou desmarca a refeição (pela descrição) como favorita: as favoritas aparecem primeiro ao repetir uma refeição. */
+    fun definirFavorita(descricao: String, favorita: Boolean) {
+        if (descricao.isBlank()) return
+        val atual = prefsFavoritas.getStringSet("refeicoes_favoritas", emptySet()).orEmpty().toMutableSet()
+        if (favorita) atual.add(chaveFavorita(descricao)) else atual.remove(chaveFavorita(descricao))
+        prefsFavoritas.edit().putStringSet("refeicoes_favoritas", atual).apply()
+    }
+
+    /**
+     * Refeições distintas (pela descrição) usando os valores da ocorrência mais recente.
+     * As favoritas vêm primeiro (sem limite); depois as mais recentes, até [limite] no total das não favoritas.
+     */
     fun modelosRefeicao(limite: Int = 10): List<ModeloRefeicao> {
         val eps = Episodios.de(repo.refeicoes, repo.doses, repo.medicoes)
-        return eps.asReversed()
+        val todos = eps.asReversed()
             .filter { it.refeicao.descricao.isNotBlank() }
-            .distinctBy { it.refeicao.descricao.trim().lowercase() }
-            .take(limite)
+            .distinctBy { chaveFavorita(it.refeicao.descricao) }
             .map { e ->
                 val dose = e.doses.firstOrNull { it.tipo.ehBolus }
-                ModeloRefeicao(e.refeicao.descricao.trim(), e.refeicao.tipo, e.refeicao.carboidratos, dose?.medicamento ?: "", dose?.quantidade ?: 0.0, e.refeicao.itens)
+                ModeloRefeicao(
+                    e.refeicao.descricao.trim(), e.refeicao.tipo, e.refeicao.carboidratos, dose?.medicamento ?: "", dose?.quantidade ?: 0.0,
+                    e.refeicao.itens, favorita = ehFavorita(e.refeicao.descricao),
+                )
             }
+        return todos.filter { it.favorita } + todos.filter { !it.favorita }.take(limite)
     }
 
     // ---------- alimentos e contagem de carboidratos ----------

@@ -116,6 +116,7 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
     var tipoBolus by remember { mutableStateOf(doseLigada?.tipo ?: TipoDose.ULTRARRAPIDA) }
     val insulinas = remember { vm.insulinasBolus().ifEmpty { listOf("Fiasp", "Novorapid", "Humalog", "Apidra") } }
     var insulina by remember { mutableStateOf(doseLigada?.medicamento ?: insulinas.first()) }
+    var favorita by remember { mutableStateOf(ref?.let { vm.ehFavorita(it.descricao) } ?: false) }
     val modelos = remember { if (atual == null && e.tipo == TipoRegistro.REFEICAO) vm.modelosRefeicao() else emptyList() }
     // dose
     var tipoDose by remember { mutableStateOf(dose?.tipo ?: TipoDose.ULTRARRAPIDA) }
@@ -152,6 +153,7 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                     id = doseLigada?.id ?: novoId(), dataHora = quando, tipo = tipoBolus, medicamento = insulina.trim().ifBlank { "Insulina" },
                     quantidade = b, observacao = "${tipoRef.rotulo} (${c.toInt()} g)", refeicaoId = id, tags = tags,
                 ) else null
+                vm.definirFavorita(r.descricao, favorita)
                 if (atual == null) vm.salvarTodos(listOfNotNull(r, novaDose))
                 else {
                     vm.salvar(r)
@@ -215,8 +217,9 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                                             carbs = if (m.itens.isEmpty()) num(m.carboidratos) else ""
                                             bolus = if (m.bolus > 0) num(m.bolus) else ""
                                             if (m.insulina.isNotBlank()) insulina = m.insulina
+                                            favorita = m.favorita
                                         },
-                                        label = { Text("${m.descricao} · ${num(m.carboidratos)} g" + if (m.bolus > 0) " · ${num(m.bolus)} UI" else "") },
+                                        label = { Text((if (m.favorita) "★ " else "") + "${m.descricao} · ${num(m.carboidratos)} g" + if (m.bolus > 0) " · ${num(m.bolus)} UI" else "") },
                                     )
                                 }
                             }
@@ -224,6 +227,13 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                         Rotulo("Refeição")
                         EscolhaChips(TipoRefeicao.entries, tipoRef, { it.rotulo }, { tipoRef = it })
                         OutlinedTextField(descricao, { descricao = it }, label = { Text("O que comeu") }, modifier = Modifier.fillMaxWidth())
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Refeição favorita", style = MaterialTheme.typography.bodyLarge)
+                                Text("Aparece primeiro em \"Repetir uma refeição anterior\".", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = favorita, onCheckedChange = { favorita = it })
+                        }
                         Rotulo("Alimentos (opcional): conte pelos carboidratos da TACO ou do rótulo")
                         itens.forEachIndexed { i, item ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

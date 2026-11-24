@@ -29,9 +29,14 @@ object Agendador {
     const val EXTRA_TEXTO = "glicemix.texto"
     const val EXTRA_ABRIR = "glicemix.abrir"
     const val EXTRA_RECORRENTE = "glicemix.recorrente"
+    /** Valor de [EXTRA_ABRIR] quando a notificação só abre o app, sem formulário (ex.: exames). */
+    const val SEM_FORMULARIO = "NENHUM"
     private const val JANELA_MS = 10 * 60 * 1000L
 
-    fun agendarTodos(ctx: Context) = LembretesRepo(ctx).listar().forEach { agendar(ctx, it) }
+    fun agendarTodos(ctx: Context) {
+        LembretesRepo(ctx).listar().forEach { agendar(ctx, it) }
+        ExamesRepo(ctx).agendarTodos()
+    }
 
     fun agendar(ctx: Context, l: Lembrete) {
         cancelar(ctx, l.id)
@@ -41,12 +46,12 @@ object Agendador {
     }
 
     /** Lembrete de uma vez só (pós-refeição, adiamento). */
-    fun agendarUnico(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro, quando: LocalDateTime) =
+    fun agendarUnico(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro?, quando: LocalDateTime) =
         programar(ctx, id, titulo, texto, abrir, quando, recorrente = false)
 
     fun cancelar(ctx: Context, id: String) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
-        am.cancel(pendente(ctx, id, "", "", TipoRegistro.MEDICAO, false))
+        am.cancel(pendente(ctx, id, "", "", null, false))
     }
 
     fun podeHorarioExato(ctx: Context): Boolean {
@@ -54,20 +59,20 @@ object Agendador {
         return ctx.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() ?: false
     }
 
-    private fun pendente(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro, recorrente: Boolean): PendingIntent {
+    private fun pendente(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro?, recorrente: Boolean): PendingIntent {
         val i = Intent(ctx, ReceptorLembrete::class.java).apply {
             action = ACAO_DISPARAR
             putExtra(EXTRA_ID, id)
             putExtra(EXTRA_TITULO, titulo)
             putExtra(EXTRA_TEXTO, texto)
-            putExtra(EXTRA_ABRIR, abrir.name)
+            putExtra(EXTRA_ABRIR, abrir?.name ?: SEM_FORMULARIO)
             putExtra(EXTRA_RECORRENTE, recorrente)
         }
         return PendingIntent.getBroadcast(ctx, id.hashCode(), i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
     @SuppressLint("MissingPermission")
-    private fun programar(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro, quando: LocalDateTime, recorrente: Boolean) {
+    private fun programar(ctx: Context, id: String, titulo: String, texto: String, abrir: TipoRegistro?, quando: LocalDateTime, recorrente: Boolean) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         val ms = quando.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val pi = pendente(ctx, id, titulo, texto, abrir, recorrente)
@@ -119,7 +124,7 @@ object Notificacoes {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(piAbrir)
-            .addAction(0, "Registrar", piAbrir)
+            .addAction(0, if (abrir == Agendador.SEM_FORMULARIO) "Abrir" else "Registrar", piAbrir)
             .addAction(0, "Adiar 15 min", piAdiar)
             .build()
         NotificationManagerCompat.from(ctx).notify(id.hashCode(), n)
@@ -144,7 +149,7 @@ class ReceptorLembrete : BroadcastReceiver() {
             }
             Agendador.ACAO_ADIAR -> {
                 Notificacoes.cancelar(ctx, id)
-                val tipo = TipoRegistro.entries.firstOrNull { it.name == abrir } ?: TipoRegistro.MEDICAO
+                val tipo = TipoRegistro.entries.firstOrNull { it.name == abrir }
                 Agendador.agendarUnico(ctx, "adiado-$id", titulo, texto, tipo, LocalDateTime.now().plusMinutes(15))
             }
         }

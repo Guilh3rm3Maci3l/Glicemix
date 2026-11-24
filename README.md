@@ -18,6 +18,7 @@ ou medicamentos e atividades físicas, acompanhe gráficos, descubra padrões e 
   resposta às refeições, carboidratos × elevação, médias por momento/turno e efeito do exercício.
 - **Padrões**: hipoglicemias recorrentes, hipoglicemia noturna, fenômeno do alvorecer, picos pós-refeição,
   relação carboidrato/insulina praticada, hipoglicemia tardia após exercício, tendência, fim de semana e regularidade da basal.
+- **Exames de rotina** (HbA1c, fundo de olho, rim…): data do último, vencimento e aviso 30 dias antes; **refeições favoritas** que aparecem primeiro ao repetir uma refeição; **relatório em PDF enviado ao médico com um toque**.
 - **Lembretes** com notificação (*Registrar* / *Adiar 15 min*) e lembrete automático para medir 2h após cada refeição.
 - **Relatório em PDF** do período (com os registros marcados com ★ e espaço para perguntas à equipe de saúde), **planilha CSV** e **backup** (exporta/importa sem duplicar; compatível com o app desktop).
 
