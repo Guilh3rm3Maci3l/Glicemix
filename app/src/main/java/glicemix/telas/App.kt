@@ -34,6 +34,12 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,8 +74,7 @@ import java.time.LocalDateTime
 enum class Aba(val rotulo: String, val icone: ImageVector) {
     PAINEL("Painel", Icons.Outlined.Home),
     REGISTROS("Registros", Icons.Outlined.CalendarMonth),
-    GRAFICOS("Gráficos", Icons.Outlined.BarChart),
-    PADROES("Padrões", Icons.Outlined.Lightbulb),
+    ANALISE("Análise", Icons.Outlined.BarChart),
     AJUSTES("Ajustes", Icons.Outlined.Settings),
 }
 
@@ -96,9 +101,12 @@ fun tipoDe(r: Registro): TipoRegistro = when (r) {
 @Composable
 fun GlicemixApp(vm: GlicemixViewModel = viewModel(), pedido: TipoRegistro? = null, aoAtender: () -> Unit = {}) {
     var aba by rememberSaveable { mutableStateOf(Aba.PAINEL) }
+    var secao by rememberSaveable { mutableStateOf(SecaoAnalise.PADROES) }
     var escolherNovo by remember { mutableStateOf(false) }
     var edicao by remember { mutableStateOf<Edicao?>(null) }
     var avisoHipo by remember { mutableStateOf<Int?>(null) }
+    val avisos = remember { SnackbarHostState() }
+    val escopo = rememberCoroutineScope()
 
     LaunchedEffect(pedido) {
         if (pedido != null) {
@@ -109,18 +117,34 @@ fun GlicemixApp(vm: GlicemixViewModel = viewModel(), pedido: TipoRegistro? = nul
 
     BackHandler(enabled = aba != Aba.PAINEL) { aba = Aba.PAINEL }
 
+    /** Exclui e oferece "Desfazer" (uma refeição leva a insulina ligada junto, e volta junto). */
+    fun excluir(r: Registro) {
+        val removidos = vm.excluir(r)
+        escopo.launch {
+            avisos.currentSnackbarData?.dismiss()
+            val res = avisos.showSnackbar(
+                if (removidos.size > 1) "Refeição e insulina excluídas" else "Registro excluído",
+                actionLabel = "Desfazer", duration = SnackbarDuration.Long,
+            )
+            if (res == SnackbarResult.ActionPerformed) vm.restaurar(removidos)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            if (aba == Aba.PAINEL) vm.config.nome.takeIf { it.isNotBlank() }?.let { "Olá, $it" } ?: "Glicemix" else aba.rotulo,
-                            fontWeight = FontWeight.Bold,
-                        )
+                    Text(
+                        if (aba == Aba.PAINEL) vm.config.nome.takeIf { it.isNotBlank() }?.let { "Olá, $it" } ?: "Glicemix" else aba.rotulo,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                actions = {
+                    // Calendário e Comparar têm seus próprios períodos
+                    if (!(aba == Aba.ANALISE && (secao == SecaoAnalise.CALENDARIO || secao == SecaoAnalise.COMPARAR))) {
+                        SeletorPeriodo(vm.periodo, vm::mudarPeriodo)
                     }
                 },
-                actions = { SeletorPeriodo(vm.periodo, vm::mudarPeriodo) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -136,6 +160,7 @@ fun GlicemixApp(vm: GlicemixViewModel = viewModel(), pedido: TipoRegistro? = nul
                 }
             }
         },
+        snackbarHost = { SnackbarHost(avisos) },
         floatingActionButton = {
             if (aba == Aba.PAINEL || aba == Aba.REGISTROS) {
                 ExtendedFloatingActionButton(
@@ -153,13 +178,12 @@ fun GlicemixApp(vm: GlicemixViewModel = viewModel(), pedido: TipoRegistro? = nul
             when (aba) {
                 Aba.PAINEL -> TelaPainel(
                     vm,
-                    aoVerPadroes = { aba = Aba.PADROES },
+                    aoVerPadroes = { secao = SecaoAnalise.PADROES; aba = Aba.ANALISE },
                     aoNovo = { edicao = Edicao(it) },
                     aoEditar = { edicao = Edicao(tipoDe(it), it) },
                 )
                 Aba.REGISTROS -> TelaRegistros(vm, aoEditar = { edicao = Edicao(tipoDe(it), it) })
-                Aba.GRAFICOS -> TelaGraficos(vm)
-                Aba.PADROES -> TelaPadroes(vm)
+                Aba.ANALISE -> TelaAnalise(vm, secao, { secao = it }, aoEditar = { edicao = Edicao(tipoDe(it), it) })
                 Aba.AJUSTES -> TelaAjustes(vm)
             }
         }
@@ -167,36 +191,24 @@ fun GlicemixApp(vm: GlicemixViewModel = viewModel(), pedido: TipoRegistro? = nul
 
     if (escolherNovo) {
         ModalBottomSheet(onDismissRequest = { escolherNovo = false }) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp)) {
-                Text("Novo registro", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-                TipoRegistro.entries.forEach { t ->
-                    val exemplo: Registro = exemploDe(t)
-                    Row(
-                        Modifier.fillMaxWidth().clickable { escolherNovo = false; edicao = Edicao(t) }.padding(horizontal = 24.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconeRegistro(exemplo, 44.dp)
-                        Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text(t.rotulo, style = MaterialTheme.typography.titleMedium)
-                            Text(t.descricao, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
+            RegistroRapido(
+                vm,
+                aoFechar = { escolherNovo = false },
+                aoEscolher = { t -> escolherNovo = false; edicao = Edicao(t) },
+                aoHipo = { avisoHipo = it },
+            )
         }
     }
 
     edicao?.let { e ->
-        EditorRegistro(e, vm, onFechar = { edicao = null }, onHipo = { avisoHipo = it })
+        EditorRegistro(e, vm, onFechar = { edicao = null }, onHipo = { avisoHipo = it }, onExcluir = ::excluir)
     }
 
     avisoHipo?.let { v -> AvisoHipoglicemia(v, vm.config) { avisoHipo = null } }
 }
 
 /** Registro “de mentira” só para reaproveitar o ícone e a cor de cada tipo. */
-private fun exemploDe(t: TipoRegistro): Registro {
+fun exemploDe(t: TipoRegistro): Registro {
     val agora = LocalDateTime.now()
     return when (t) {
         TipoRegistro.MEDICAO -> Medicao(dataHora = agora, valor = 100, momento = MomentoMedicao.ALEATORIA)

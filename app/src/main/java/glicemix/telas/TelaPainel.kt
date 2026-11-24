@@ -47,6 +47,12 @@ import glicemix.model.Registro
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.roundToInt
+import glicemix.analise.Episodios
+import androidx.compose.material3.Surface
+import glicemix.model.Refeicao
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 @Composable
 fun TelaPainel(vm: GlicemixViewModel, aoVerPadroes: () -> Unit, aoNovo: (TipoRegistro) -> Unit, aoEditar: (Registro) -> Unit) {
@@ -54,6 +60,7 @@ fun TelaPainel(vm: GlicemixViewModel, aoVerPadroes: () -> Unit, aoNovo: (TipoReg
     val cfg = d.config
     val r = vm.resumo
     var janela by rememberSaveable { mutableStateOf(3) }
+    var maisIndicadores by rememberSaveable { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 96.dp),
@@ -68,62 +75,111 @@ fun TelaPainel(vm: GlicemixViewModel, aoVerPadroes: () -> Unit, aoNovo: (TipoReg
             }
         }
 
-        // Última glicemia em destaque
+        // 1) O que importa agora: a última glicemia, para onde está indo e como chegou até aqui
         val ult = d.medicoes.lastOrNull()
-        Cartao {
-            if (ult == null) {
+        if (ult == null) {
+            Cartao {
                 Text("Nenhuma medição no período", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                val cor = Cores.faixa(cfg.classificar(ult.valor))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { aoEditar(ult) }) {
-                    Column(Modifier.weight(1f)) {
-                        Text("ÚLTIMA GLICEMIA", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text("${ult.valor}", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = cor)
-                            Spacer(Modifier.width(6.dp))
-                            Text("mg/dL", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 9.dp))
-                        }
-                        Text("${haQuanto(ult.dataHora)} · ${ult.momento.rotulo}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            val faixa = cfg.classificar(ult.valor)
+            val cor = Cores.faixa(faixa)
+            val tend = tendencia(d.medicoes)
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = cor.copy(alpha = 0.10f),
+                modifier = Modifier.fillMaxWidth().clickable { aoEditar(ult) }
+                    .semantics { contentDescription = "Última glicemia ${ult.valor} miligramas por decilitro, ${faixa.rotulo.lowercase()}, ${haQuanto(ult.dataHora)}" + (tend?.let { ", ${it.second}" } ?: "") },
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("ÚLTIMA GLICEMIA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Etiqueta("${simboloFaixa(faixa)} ${faixa.rotulo}", cor)
                     }
-                    Etiqueta(cfg.classificar(ult.valor).rotulo, cor)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("${ult.valor}", style = Numeros, fontSize = 64.sp, fontWeight = FontWeight.Bold, color = cor)
+                        Spacer(Modifier.width(8.dp))
+                        Text("mg/dL", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 14.dp))
+                        if (tend != null) {
+                            Spacer(Modifier.width(12.dp))
+                            Text(tend.first, fontSize = 40.sp, fontWeight = FontWeight.Bold, color = cor, modifier = Modifier.padding(bottom = 4.dp))
+                        }
+                    }
+                    Text("${haQuanto(ult.dataHora)} · ${ult.momento.rotulo}" + (tend?.let { " · ${it.second}" } ?: ""), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val ultimas = d.medicoes.takeLast(8).map { it.valor }
+                    if (ultimas.size >= 2) MiniLinha(ultimas, cfg, Modifier.fillMaxWidth().padding(top = 14.dp).height(56.dp))
                 }
             }
         }
 
-        // Indicadores
+        // 2) Uma frase de resumo e só os três indicadores que mais pesam
         if (r != null) {
+            val tir = r.tempoNoAlvo.roundToInt()
+            val frase = (if (r.tempoNoAlvo >= 70) "Tempo no alvo de $tir%, dentro da meta de 70%." else "Tempo no alvo de $tir%, ${70 - tir} pontos abaixo da meta de 70%.") +
+                (if (r.episodiosHipo == 0) " Nenhuma hipoglicemia no período." else " ${r.episodiosHipo} " + (if (r.episodiosHipo == 1) "hipoglicemia" else "hipoglicemias") + " no período.")
+            Text(frase, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+            Text(vm.periodo.rotulo, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Indicador("Média", "${r.media.roundToInt()}", "mg/dL", "± ${r.desvio.roundToInt()} · ${r.n} medições", null, Modifier.weight(1f))
+                Indicador("Tempo no alvo", "$tir", "%", "Meta > 70%",
+                    if (r.tempoNoAlvo >= 70) Cores.faixa(Faixa.NO_ALVO) else if (r.tempoNoAlvo >= 50) Cores.faixa(Faixa.ALTA) else Cores.faixa(Faixa.BAIXA), Modifier.weight(1f))
                 Indicador("HbA1c estimada", "%.1f".format(r.gmi), "%", "GMI, pela média",
                     if (r.gmi < 7) Cores.faixa(Faixa.NO_ALVO) else if (r.gmi < 8) Cores.faixa(Faixa.ALTA) else Cores.faixa(Faixa.MUITO_ALTA), Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Indicador("Tempo no alvo", "${r.tempoNoAlvo.roundToInt()}", "%", "Meta > 70%",
-                    if (r.tempoNoAlvo >= 70) Cores.faixa(Faixa.NO_ALVO) else if (r.tempoNoAlvo >= 50) Cores.faixa(Faixa.ALTA) else Cores.faixa(Faixa.BAIXA), Modifier.weight(1f))
-                Indicador("Variabilidade", "%.0f".format(r.cv), "% CV", "Meta ≤ 36%",
-                    if (r.cv <= 36) Cores.faixa(Faixa.NO_ALVO) else Cores.faixa(Faixa.ALTA), Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Indicador("Hipoglicemias", "${r.episodiosHipo}", if (r.episodiosHipo == 1) "episódio" else "episódios",
                     "%.1f%% < ${cfg.alvoMin}".format(r.tempoAbaixo), if (r.episodiosHipo == 0) Cores.faixa(Faixa.NO_ALVO) else Cores.faixa(Faixa.BAIXA), Modifier.weight(1f))
-                Indicador("Medições/dia", "%.1f".format(r.medicoesPorDia), "", "${r.diasComDados} dias com dados", null, Modifier.weight(1f))
+                Indicador("Média", "${r.media.roundToInt()}", "mg/dL", "± ${r.desvio.roundToInt()} · ${r.n} medições", null, Modifier.weight(1f))
             }
 
-            Cartao(titulo = "Tempo nas faixas", subtitulo = "Meta: mais de 70% no alvo e menos de 4% abaixo") {
-                BarraTempoNoAlvo(r.percentualPorFaixa)
-                Spacer(Modifier.height(10.dp))
-                Faixa.entries.reversed().forEach { f ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(10.dp).background(Cores.faixa(f), RoundedCornerShape(3.dp)))
-                        Spacer(Modifier.width(8.dp))
-                        Text(f.rotulo, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text("${(r.percentualPorFaixa[f] ?: 0.0).roundToInt()}%", fontWeight = FontWeight.Bold)
+            TextButton(onClick = { maisIndicadores = !maisIndicadores }) {
+                Text(if (maisIndicadores) "Mostrar menos" else "Ver todos os indicadores e as faixas")
+            }
+            if (maisIndicadores) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Indicador("Variabilidade", "%.0f".format(r.cv), "% CV", "Meta ≤ 36%",
+                        if (r.cv <= 36) Cores.faixa(Faixa.NO_ALVO) else Cores.faixa(Faixa.ALTA), Modifier.weight(1f))
+                    Indicador("Medições/dia", "%.1f".format(r.medicoesPorDia), "", "${r.diasComDados} dias com dados", null, Modifier.weight(1f))
+                }
+                Cartao(titulo = "Tempo nas faixas", subtitulo = "Meta: mais de 70% no alvo e menos de 4% abaixo") {
+                    BarraTempoNoAlvo(r.percentualPorFaixa)
+                    Spacer(Modifier.height(10.dp))
+                    Faixa.entries.reversed().forEach { f ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(simboloFaixa(f), fontSize = 12.sp, color = Cores.faixa(f), modifier = Modifier.width(28.dp))
+                            Text(f.rotulo, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text("${(r.percentualPorFaixa[f] ?: 0.0).roundToInt()}%", style = Numeros, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
 
-        // Linha do tempo recente
+        // 3) Hoje, como linha do tempo (refeição com insulina e resultado numa linha só)
+        val hojeDados = remember(d) { d }
+        val episodios = remember(hojeDados) { Episodios.de(hojeDados) }
+        val emEpisodios = remember(episodios) { Episodios.dosesEmEpisodios(episodios) }
+        val hoje = (d.medicoes + d.refeicoes + d.doses.filter { it.id !in emEpisodios } + d.atividades)
+            .filter { it.dataHora.toLocalDate() == LocalDate.now() }.sortedByDescending { it.dataHora }
+        Cartao(titulo = "Hoje", subtitulo = if (hoje.isEmpty()) null else "${hoje.size} registro(s)") {
+            if (hoje.isEmpty()) Text("Nada registrado hoje ainda. Toque em Registrar para começar.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            hoje.take(20).forEach { reg ->
+                val ep = (reg as? Refeicao)?.let { rf -> episodios.firstOrNull { it.refeicao.id == rf.id } }
+                if (ep != null) LinhaEpisodio(ep, cfg, Modifier.clickable { aoEditar(reg) })
+                else LinhaRegistro(reg, cfg, Modifier.clickable { aoEditar(reg) })
+            }
+        }
+
+        // 4) Padrões principais
+        val principais = vm.padroes.filter { it.nivel != Nivel.POSITIVO }.take(3).ifEmpty { vm.padroes.take(3) }
+        if (principais.isNotEmpty()) {
+            Cartao(titulo = "Principais padrões") {
+                principais.forEach { LinhaPadrao(it); Spacer(Modifier.height(10.dp)) }
+                TextButton(onClick = aoVerPadroes) { Text("Ver análise completa") }
+            }
+        }
+
+        // 5) Glicemia recente
         if (d.medicoes.isNotEmpty()) {
             Cartao(titulo = "Glicemia recente") {
                 EscolhaChips(listOf(1, 3, 7), janela, { if (it == 1) "24 horas" else "$it dias" }, { janela = it })
@@ -133,23 +189,6 @@ fun TelaPainel(vm: GlicemixViewModel, aoVerPadroes: () -> Unit, aoNovo: (TipoReg
                 GraficoLinhaTempo(d, ini, fim)
                 Legenda("Refeição" to Cores.refeicao, "Insulina" to Cores.dose, "Basal" to Cores.basal, "Atividade" to Cores.atividade)
             }
-        }
-
-        // Padrões principais
-        val principais = vm.padroes.filter { it.nivel != Nivel.POSITIVO }.take(3).ifEmpty { vm.padroes.take(3) }
-        if (principais.isNotEmpty()) {
-            Cartao(titulo = "Principais padrões") {
-                principais.forEach { LinhaPadrao(it); Spacer(Modifier.height(10.dp)) }
-                TextButton(onClick = aoVerPadroes) { Text("Ver análise completa") }
-            }
-        }
-
-        // Hoje
-        val hoje = (d.medicoes + d.refeicoes + d.doses + d.atividades)
-            .filter { it.dataHora.toLocalDate() == LocalDate.now() }.sortedByDescending { it.dataHora }
-        Cartao(titulo = "Hoje") {
-            if (hoje.isEmpty()) Text("Nada registrado hoje ainda.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            hoje.take(15).forEach { LinhaRegistro(it, cfg, Modifier.clickable { aoEditar(it) }) }
         }
     }
 }

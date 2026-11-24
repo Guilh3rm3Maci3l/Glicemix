@@ -14,10 +14,10 @@ class PersistenciaCsv(val pasta: File) : Persistencia {
     private val atuais = linkedMapOf<String, Registro>()
 
     private enum class Tipo(val arquivo: String, val cabecalho: List<String>) {
-        MEDICAO("medicoes.csv", listOf("id", "dataHora", "valor", "momento", "obs")),
-        REFEICAO("refeicoes.csv", listOf("id", "dataHora", "tipo", "descricao", "carboidratos", "obs")),
-        DOSE("doses.csv", listOf("id", "dataHora", "tipo", "medicamento", "quantidade", "unidade", "obs")),
-        ATIVIDADE("atividades.csv", listOf("id", "dataHora", "tipo", "duracaoMin", "intensidade", "obs")),
+        MEDICAO("medicoes.csv", listOf("id", "dataHora", "valor", "momento", "obs", "tags", "marcado")),
+        REFEICAO("refeicoes.csv", listOf("id", "dataHora", "tipo", "descricao", "carboidratos", "obs", "tags", "marcado", "itens")),
+        DOSE("doses.csv", listOf("id", "dataHora", "tipo", "medicamento", "quantidade", "unidade", "obs", "refeicaoId", "tags", "marcado")),
+        ATIVIDADE("atividades.csv", listOf("id", "dataHora", "tipo", "duracaoMin", "intensidade", "obs", "tags", "marcado")),
     }
 
     private fun tipo(r: Registro) = when (r) {

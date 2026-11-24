@@ -53,6 +53,18 @@ sealed interface Registro {
     val id: String
     val dataHora: LocalDateTime
     val observacao: String
+    /** Circunstâncias do momento (ver [Etiquetas]): doença, estresse, álcool etc. */
+    val tags: List<String>
+    /** Marcado para levar à consulta: entra numa seção própria do relatório. */
+    val marcado: Boolean
+}
+
+/** Circunstâncias sugeridas; o histórico pode ter outras, digitadas no passado. */
+object Etiquetas {
+    val SUGERIDAS = listOf("Doença", "Estresse", "Álcool", "Viagem", "Sensor novo", "Menstruação", "Sono ruim", "Festa")
+    const val SEPARADOR = "|"
+    fun juntar(t: List<String>) = t.joinToString(SEPARADOR)
+    fun separar(s: String): List<String> = s.split(SEPARADOR).map { it.trim() }.filter { it.isNotEmpty() }
 }
 
 /** Glicemia capilar ou de sensor, em mg/dL. */
@@ -62,6 +74,8 @@ data class Medicao(
     val valor: Int,
     val momento: MomentoMedicao,
     override val observacao: String = "",
+    override val tags: List<String> = emptyList(),
+    override val marcado: Boolean = false,
 ) : Registro
 
 data class Refeicao(
@@ -69,9 +83,13 @@ data class Refeicao(
     override val dataHora: LocalDateTime,
     val tipo: TipoRefeicao,
     val descricao: String,
-    /** Carboidratos estimados, em gramas. */
+    /** Carboidratos, em gramas: a soma dos [itens] quando há itens; senão, o total digitado. */
     val carboidratos: Double,
     override val observacao: String = "",
+    override val tags: List<String> = emptyList(),
+    override val marcado: Boolean = false,
+    /** Alimentos pesados (TACO, rótulo ou próprios). Vazio = total digitado à mão. */
+    val itens: List<ItemRefeicao> = emptyList(),
 ) : Registro
 
 data class Dose(
@@ -84,6 +102,10 @@ data class Dose(
     /** "UI" para insulina, "mg" ou "comp." para orais. */
     val unidade: String = "UI",
     override val observacao: String = "",
+    /** Refeição à qual esta dose pertence (vazio = dose avulsa). */
+    val refeicaoId: String = "",
+    override val tags: List<String> = emptyList(),
+    override val marcado: Boolean = false,
 ) : Registro
 
 data class Atividade(
@@ -93,6 +115,8 @@ data class Atividade(
     val duracaoMin: Int,
     val intensidade: Intensidade,
     override val observacao: String = "",
+    override val tags: List<String> = emptyList(),
+    override val marcado: Boolean = false,
 ) : Registro {
     val fim: LocalDateTime get() = dataHora.plusMinutes(duracaoMin.toLong())
 }

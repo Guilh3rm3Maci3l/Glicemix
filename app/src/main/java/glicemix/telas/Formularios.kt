@@ -25,7 +25,23 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
+import glicemix.model.resumo
+import glicemix.model.totalCarboidratos
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.navigationBarsPadding
+import glicemix.model.TipoDose
+import glicemix.model.TipoRefeicao
+import glicemix.model.novoId
+import glicemix.model.momentoSugerido
+import glicemix.model.refeicaoSugerida
+import java.time.LocalDateTime
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,19 +74,16 @@ import glicemix.model.Medicao
 import glicemix.model.MomentoMedicao
 import glicemix.model.Refeicao
 import glicemix.model.Registro
-import glicemix.model.TipoDose
-import glicemix.model.TipoRefeicao
-import glicemix.model.momentoSugerido
-import glicemix.model.novoId
-import glicemix.model.refeicaoSugerida
 import java.time.LocalDate
-import java.time.LocalDateTime
 
 private fun decimal(s: String): Double? = s.trim().replace(',', '.').toDoubleOrNull()
 
-/** Formulário em tela cheia para criar ou editar qualquer tipo de registro. */
+/**
+ * Formulário em tela cheia para criar ou editar qualquer tipo de registro.
+ * [onExcluir] recebe o registro apagado para a tela oferecer "Desfazer".
+ */
 @Composable
-fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHipo: (Int) -> Unit) {
+fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHipo: (Int) -> Unit, onExcluir: (Registro) -> Unit = {}) {
     val atual = e.registro
     val med = atual as? Medicao
     val ref = atual as? Refeicao
@@ -79,11 +92,16 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
     val inicial = remember {
         atual?.dataHora ?: LocalDateTime.now().withSecond(0).withNano(0).let { if (e.tipo == TipoRegistro.ATIVIDADE) it.minusMinutes(30) else it }
     }
+    // dose ligada a esta refeição (ao editar)
+    val doseLigada = remember { ref?.let { r -> vm.dosesDe(r.id).firstOrNull { it.tipo.ehBolus } } }
 
     var quando by remember { mutableStateOf(inicial) }
     var obs by remember { mutableStateOf(atual?.observacao ?: "") }
+    var tags by remember { mutableStateOf(atual?.tags ?: emptyList()) }
+    var marcado by remember { mutableStateOf(atual?.marcado ?: false) }
     var erro by remember { mutableStateOf<String?>(null) }
     var confirmarExclusao by remember { mutableStateOf(false) }
+    val etiquetasDisponiveis = remember { vm.etiquetas() }
 
     // medição
     var valor by remember { mutableStateOf(med?.valor?.toString() ?: "") }
@@ -91,10 +109,14 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
     // refeição
     var tipoRef by remember { mutableStateOf(ref?.tipo ?: refeicaoSugerida(inicial)) }
     var descricao by remember { mutableStateOf(ref?.descricao ?: "") }
-    var carbs by remember { mutableStateOf(ref?.carboidratos?.let { num(it) } ?: "") }
-    var bolus by remember { mutableStateOf("") }
+    var carbs by remember { mutableStateOf(if (ref?.itens.isNullOrEmpty()) ref?.carboidratos?.let { num(it) } ?: "" else "") }
+    var itens by remember { mutableStateOf(ref?.itens ?: emptyList()) }
+    var selecionando by remember { mutableStateOf(false) }
+    var bolus by remember { mutableStateOf(doseLigada?.quantidade?.let { num(it) } ?: "") }
+    var tipoBolus by remember { mutableStateOf(doseLigada?.tipo ?: TipoDose.ULTRARRAPIDA) }
     val insulinas = remember { vm.insulinasBolus().ifEmpty { listOf("Fiasp", "Novorapid", "Humalog", "Apidra") } }
-    var insulina by remember { mutableStateOf(insulinas.first()) }
+    var insulina by remember { mutableStateOf(doseLigada?.medicamento ?: insulinas.first()) }
+    val modelos = remember { if (atual == null && e.tipo == TipoRegistro.REFEICAO) vm.modelosRefeicao() else emptyList() }
     // dose
     var tipoDose by remember { mutableStateOf(dose?.tipo ?: TipoDose.ULTRARRAPIDA) }
     val medicamentos = remember { (vm.medicamentos() + listOf("Fiasp", "Novorapid", "Humalog", "Tresiba", "Lantus", "Toujeo", "NPH", "Metformina")).distinct() }
@@ -113,37 +135,42 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
             TipoRegistro.MEDICAO -> {
                 val v = valor.trim().toIntOrNull()
                 if (v == null || v !in 20..600) { erro = "Informe uma glicemia entre 20 e 600 mg/dL."; return }
-                vm.salvar(Medicao(id, quando, v, momento, obs.trim()))
+                vm.salvar(Medicao(id, quando, v, momento, obs.trim(), tags, marcado))
                 onFechar()
                 if (atual == null && v < vm.config.alvoMin) onHipo(v)
             }
             TipoRegistro.REFEICAO -> {
-                val c = if (carbs.isBlank()) 0.0 else decimal(carbs)
+                // com alimentos pesados, o total é a soma deles; sem alimentos, vale o que foi digitado
+                val c = if (itens.isNotEmpty()) itens.totalCarboidratos() else if (carbs.isBlank()) 0.0 else decimal(carbs)
                 if (c == null || c < 0) { erro = "Carboidratos inválidos."; return }
-                if (descricao.isBlank() && c == 0.0) { erro = "Informe o que comeu ou a quantidade de carboidratos."; return }
+                if (descricao.isBlank() && itens.isEmpty() && c == 0.0) { erro = "Informe o que comeu ou a quantidade de carboidratos."; return }
                 val b = if (bolus.isBlank()) 0.0 else decimal(bolus)
                 if (b == null || b < 0) { erro = "Dose de insulina inválida."; return }
-                val r = Refeicao(id, quando, tipoRef, descricao.trim(), c, obs.trim())
-                val lista = mutableListOf<Registro>(r)
-                if (atual == null && b > 0) lista += Dose(
-                    dataHora = quando, tipo = TipoDose.ULTRARRAPIDA, medicamento = insulina.trim().ifBlank { "Insulina" },
-                    quantidade = b, observacao = "${tipoRef.rotulo} (${c.toInt()} g)",
-                )
-                if (atual == null) vm.salvarTodos(lista) else vm.salvar(r)
+                val r = Refeicao(id, quando, tipoRef, descricao.trim().ifBlank { itens.resumo() }, c, obs.trim(), tags, marcado, itens)
+                // a dose fica ligada à refeição pelo id: editar ou apagar a refeição leva a dose junto
+                val novaDose = if (b > 0) Dose(
+                    id = doseLigada?.id ?: novoId(), dataHora = quando, tipo = tipoBolus, medicamento = insulina.trim().ifBlank { "Insulina" },
+                    quantidade = b, observacao = "${tipoRef.rotulo} (${c.toInt()} g)", refeicaoId = id, tags = tags,
+                ) else null
+                if (atual == null) vm.salvarTodos(listOfNotNull(r, novaDose))
+                else {
+                    vm.salvar(r)
+                    if (novaDose != null) vm.salvar(novaDose) else doseLigada?.let { vm.remover(it.id) }
+                }
                 onFechar()
             }
             TipoRegistro.DOSE -> {
                 val q = decimal(quantidade)
                 if (medicamento.isBlank()) { erro = "Informe o medicamento."; return }
                 if (q == null || q <= 0) { erro = "A quantidade deve ser maior que zero."; return }
-                vm.salvar(Dose(id, quando, tipoDose, medicamento.trim(), q, unidade.trim().ifBlank { "UI" }, obs.trim()))
+                vm.salvar(Dose(id, quando, tipoDose, medicamento.trim(), q, unidade.trim().ifBlank { "UI" }, obs.trim(), dose?.refeicaoId ?: "", tags, marcado))
                 onFechar()
             }
             TipoRegistro.ATIVIDADE -> {
                 val dmin = duracao.trim().toIntOrNull()
                 if (tipoAtv.isBlank()) { erro = "Informe a atividade."; return }
                 if (dmin == null || dmin !in 1..600) { erro = "Informe a duração em minutos."; return }
-                vm.salvar(Atividade(id, quando, tipoAtv.trim(), dmin, intensidade, obs.trim()))
+                vm.salvar(Atividade(id, quando, tipoAtv.trim(), dmin, intensidade, obs.trim(), tags, marcado))
                 onFechar()
             }
         }
@@ -155,12 +182,18 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                 TopAppBar(
                     title = { Text((if (atual == null) "Nova " else "Editar ") + e.tipo.rotulo.lowercase()) },
                     navigationIcon = { IconButton(onClick = onFechar) { Icon(Icons.Filled.Close, contentDescription = "Fechar") } },
-                    actions = { TextButton(onClick = { salvar() }) { Text("Salvar", fontWeight = FontWeight.Bold) } },
                 )
+            },
+            // Salvar embaixo, ao alcance do polegar
+            bottomBar = {
+                Button(
+                    onClick = { salvar() },
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp).height(52.dp),
+                ) { Text("Salvar", fontWeight = FontWeight.Bold) }
             },
         ) { pad ->
             Column(
-                Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+                Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 CampoDataHora(quando, rotulo = if (e.tipo == TipoRegistro.ATIVIDADE) "Início" else "Data e hora") { quando = it }
@@ -172,17 +205,64 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                         EscolhaChips(MomentoMedicao.entries, momento, { it.rotulo }, { momento = it })
                     }
                     TipoRegistro.REFEICAO -> {
+                        if (modelos.isNotEmpty()) {
+                            Rotulo("Repetir uma refeição anterior")
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                modelos.forEach { m ->
+                                    SuggestionChip(
+                                        onClick = {
+                                            descricao = m.descricao; itens = m.itens
+                                            carbs = if (m.itens.isEmpty()) num(m.carboidratos) else ""
+                                            bolus = if (m.bolus > 0) num(m.bolus) else ""
+                                            if (m.insulina.isNotBlank()) insulina = m.insulina
+                                        },
+                                        label = { Text("${m.descricao} · ${num(m.carboidratos)} g" + if (m.bolus > 0) " · ${num(m.bolus)} UI" else "") },
+                                    )
+                                }
+                            }
+                        }
                         Rotulo("Refeição")
                         EscolhaChips(TipoRefeicao.entries, tipoRef, { it.rotulo }, { tipoRef = it })
                         OutlinedTextField(descricao, { descricao = it }, label = { Text("O que comeu") }, modifier = Modifier.fillMaxWidth())
-                        CampoNumero(carbs, "Carboidratos", "g") { carbs = it }
-                        if (atual == null) {
-                            HorizontalDivider()
-                            Text("Insulina para esta refeição (opcional)", style = MaterialTheme.typography.titleSmall)
-                            CampoNumero(bolus, "Dose aplicada", "UI") { bolus = it }
-                            OutlinedTextField(insulina, { insulina = it }, label = { Text("Insulina") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Sugestoes(insulinas) { insulina = it }
+                        Rotulo("Alimentos (opcional): conte pelos carboidratos da TACO ou do rótulo")
+                        itens.forEachIndexed { i, item ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.nome, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        "${num(item.gramas)} g · ${num(Math.round(item.carboidratos * 10) / 10.0)} g de carboidratos · ${item.origem.rotulo}",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                IconButton(onClick = { itens = itens.filterIndexed { j, _ -> j != i } }) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "Remover ${item.nome}")
+                                }
+                            }
                         }
+                        OutlinedButton(onClick = { selecionando = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (itens.isEmpty()) "Adicionar alimento" else "Adicionar outro alimento")
+                        }
+                        if (itens.isNotEmpty()) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Total de carboidratos", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                                Text("${num(itens.totalCarboidratos())} g", style = Numeros, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { carbs = num(itens.totalCarboidratos()); itens = emptyList() }) { Text("Digitar o total manualmente") }
+                        } else {
+                            CampoNumero(carbs, "Carboidratos", "g") { carbs = it }
+                        }
+                        HorizontalDivider()
+                        Text("Insulina para esta refeição (opcional)", style = MaterialTheme.typography.titleSmall)
+                        val carbosAgora = if (itens.isNotEmpty()) itens.totalCarboidratos() else (decimal(carbs) ?: 0.0)
+                        val referencia = remember(carbosAgora, tipoRef) { vm.referenciaDose(tipoRef, carbosAgora, ref?.id) }
+                        if (referencia != null) CartaoReferenciaDose(referencia, vm.config.alvoMin, tipoRef.rotulo)
+                        CampoNumero(bolus, "Dose aplicada", "UI") { bolus = it }
+                        Rotulo("Tipo de insulina")
+                        EscolhaChips(listOf(TipoDose.ULTRARRAPIDA, TipoDose.RAPIDA), tipoBolus, { if (it == TipoDose.ULTRARRAPIDA) "Ultrarrápida" else "Rápida (regular)" }, { tipoBolus = it })
+                        OutlinedTextField(insulina, { insulina = it }, label = { Text("Insulina") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Sugestoes(insulinas) { insulina = it }
                     }
                     TipoRegistro.DOSE -> {
                         Rotulo("Tipo")
@@ -207,7 +287,18 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
                     }
                 }
 
+                Rotulo("Circunstâncias (ajudam a explicar dias fora do padrão)")
+                EscolhaEtiquetas(etiquetasDisponiveis, tags, { tags = it })
+
                 OutlinedTextField(obs, { obs = it }, label = { Text("Observação") }, modifier = Modifier.fillMaxWidth())
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Levar para a consulta", style = MaterialTheme.typography.bodyLarge)
+                        Text("Entra numa seção própria do relatório em PDF.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = marcado, onCheckedChange = { marcado = it })
+                }
 
                 erro?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
 
@@ -228,18 +319,53 @@ fun EditorRegistro(e: Edicao, vm: GlicemixViewModel, onFechar: () -> Unit, onHip
         }
     }
 
+    if (selecionando) {
+        SeletorAlimento(vm, aoAdicionar = { itens = itens + it }, aoFechar = { selecionando = false })
+    }
+
     if (confirmarExclusao && atual != null) {
         AlertDialog(
             onDismissRequest = { confirmarExclusao = false },
             title = { Text("Excluir registro?") },
-            text = { Text("Esta ação não pode ser desfeita.") },
+            text = { Text(if (doseLigada != null) "A dose de insulina ligada a esta refeição também será excluída. Você poderá desfazer logo em seguida." else "Você poderá desfazer logo em seguida.") },
             confirmButton = {
-                TextButton(onClick = { confirmarExclusao = false; vm.remover(atual.id); onFechar() }) {
+                TextButton(onClick = { confirmarExclusao = false; onExcluir(atual); onFechar() }) {
                     Text("Excluir", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = { TextButton(onClick = { confirmarExclusao = false }) { Text("Cancelar") } },
         )
+    }
+}
+
+/**
+ * O que a própria pessoa registrou em refeições parecidas. Não sugere dose: mostra o que foi aplicado e o resultado,
+ * para ela e a equipe de saúde decidirem. Não preenche nenhum campo.
+ */
+@Composable
+private fun CartaoReferenciaDose(r: glicemix.analise.Episodios.ReferenciaDose, alvoMin: Int, tipo: String) {
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Seu histórico com refeições parecidas", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "${r.n} vezes (${tipo.lowercase()}, de ${num(r.carbosMin)} a ${num(r.carbosMax)} g): você aplicou de ${num(r.minimo)} a ${num(r.maximo)} UI, mediana de ${num(r.mediana)} UI.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (r.comResultado > 0) {
+                Text(
+                    "Glicemia 2 h depois (${r.comResultado} com medição): ${r.noAlvo} no alvo, ${r.acima} acima, ${r.abaixo} abaixo" +
+                        (r.mediaDepois?.let { ", média de ${it.toInt()} mg/dL" } ?: "") + ".",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (r.abaixo > 0) {
+                Text("▼ Em ${r.abaixo} " + (if (r.abaixo == 1) "dessas vezes" else "dessas vezes") + " a glicemia ficou abaixo de $alvoMin mg/dL.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Cores.faixa(glicemix.model.Faixa.BAIXA))
+            }
+            Text(
+                "É só o que você registrou, não uma recomendação de dose. Combine qualquer ajuste com sua equipe de saúde.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

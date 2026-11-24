@@ -15,9 +15,17 @@ import glicemix.lembretes.Agendador
 import glicemix.lembretes.Lembrete
 import glicemix.lembretes.LembretesRepo
 import glicemix.telas.TipoRegistro
+import glicemix.data.BaseAlimentos
 import glicemix.data.DadosExemplo
 import glicemix.data.Repositorio
+import glicemix.analise.Episodios
+import glicemix.model.Alimento
 import glicemix.model.Configuracao
+import glicemix.model.ItemRefeicao
+import glicemix.model.Origem
+import glicemix.model.Dose
+import glicemix.model.Etiquetas
+import glicemix.model.TipoRefeicao
 import glicemix.model.Refeicao
 import glicemix.model.Registro
 import glicemix.model.maisUsados
@@ -34,6 +42,14 @@ class GlicemixViewModel(app: Application) : AndroidViewModel(app) {
     /** Registros no banco SQLite do app; a análise trabalha sobre a cópia em memória do repositório. */
     val repo = Repositorio(PersistenciaSqlite(app))
     private val repoLembretes = LembretesRepo(app)
+    private val repoProprios = AlimentosProprios(app)
+
+    /** A TACO embarcada em assets/taco.tsv (carregada na primeira busca). */
+    val taco: BaseAlimentos by lazy {
+        BaseAlimentos.deTsv(app.assets.open("taco.tsv").bufferedReader(Charsets.UTF_8).use { it.readText() })
+    }
+    var proprios by mutableStateOf(repoProprios.listar())
+        private set
 
     var periodo by mutableStateOf(Periodo.D14)
         private set
@@ -87,6 +103,67 @@ class GlicemixViewModel(app: Application) : AndroidViewModel(app) {
         repo.remover(id)
         Agendador.cancelar(getApplication<Application>(), "pos-$id")
     }
+
+    /**
+     * Exclui o registro e, se for uma refeição, as doses ligadas a ela (não ficam órfãs).
+     * Devolve tudo o que foi removido, para a tela oferecer "Desfazer".
+     */
+    fun excluir(r: Registro): List<Registro> {
+        val ligadas = if (r is Refeicao) repo.doses.filter { it.refeicaoId == r.id } else emptyList()
+        (listOf(r) + ligadas).forEach { remover(it.id) }
+        return listOf(r) + ligadas
+    }
+
+    fun restaurar(registros: List<Registro>) = salvarTodos(registros)
+
+    /** Doses ligadas a uma refeição. */
+    fun dosesDe(refeicaoId: String): List<Dose> = repo.doses.filter { it.refeicaoId == refeicaoId }
+
+    /** Refeição já feita antes, para repetir com um toque (carboidratos e insulina costumam ser os mesmos). */
+    data class ModeloRefeicao(val descricao: String, val tipo: TipoRefeicao, val carboidratos: Double, val insulina: String, val bolus: Double, val itens: List<ItemRefeicao> = emptyList())
+
+    /** Refeições distintas (pela descrição), da mais recente para a mais antiga. */
+    fun modelosRefeicao(limite: Int = 10): List<ModeloRefeicao> {
+        val eps = Episodios.de(repo.refeicoes, repo.doses, repo.medicoes)
+        return eps.asReversed()
+            .filter { it.refeicao.descricao.isNotBlank() }
+            .distinctBy { it.refeicao.descricao.trim().lowercase() }
+            .take(limite)
+            .map { e ->
+                val dose = e.doses.firstOrNull { it.tipo.ehBolus }
+                ModeloRefeicao(e.refeicao.descricao.trim(), e.refeicao.tipo, e.refeicao.carboidratos, dose?.medicamento ?: "", dose?.quantidade ?: 0.0, e.refeicao.itens)
+            }
+    }
+
+    // ---------- alimentos e contagem de carboidratos ----------
+
+    /** Busca na TACO e nos alimentos da própria pessoa (estes primeiro). */
+    fun buscarAlimentos(consulta: String): List<Alimento> = taco.buscar(consulta, proprios)
+
+    /** Alimentos usados nas últimas refeições, do mais recente ao mais antigo, para repetir com um toque. */
+    fun alimentosRecentes(limite: Int = 12): List<Alimento> =
+        repo.refeicoes.asReversed().flatMap { it.itens.asReversed() }.distinctBy { it.nome }.take(limite).map { i ->
+            val daTaco = if (i.origem == Origem.TACO) taco.alimentos.firstOrNull { it.nome == i.nome } else null
+            Alimento(
+                id = "recente-${i.nome}", nome = i.nome, grupo = "Recentes", carboidratos100 = i.carboidratos100,
+                origem = i.origem, aviso = daTaco?.aviso.orEmpty(),
+                porcaoNome = proprios.firstOrNull { it.nome == i.nome }?.porcaoNome.orEmpty(),
+                porcaoGramas = proprios.firstOrNull { it.nome == i.nome }?.porcaoGramas,
+            )
+        }
+
+    fun salvarAlimentoProprio(a: Alimento) { repoProprios.salvar(a); proprios = repoProprios.listar() }
+    fun removerAlimentoProprio(id: String) { repoProprios.remover(id); proprios = repoProprios.listar() }
+
+    /** O que o histórico mostra para refeições parecidas (consulta, não recomendação de dose). */
+    fun referenciaDose(tipo: TipoRefeicao, carboidratos: Double, ignorarRefeicao: String? = null): Episodios.ReferenciaDose? {
+        val eps = Episodios.de(repo.refeicoes, repo.doses, repo.medicoes).filter { it.refeicao.id != ignorarRefeicao }
+        return Episodios.referenciaDose(eps, tipo, carboidratos, repo.configuracao)
+    }
+
+    /** Circunstâncias sugeridas mais as que já foram usadas. */
+    fun etiquetas(): List<String> =
+        (Etiquetas.SUGERIDAS + repo.todos.flatMap { it.tags }).distinct()
 
     fun salvarConfiguracao(c: Configuracao) { repo.configuracao = c }
 

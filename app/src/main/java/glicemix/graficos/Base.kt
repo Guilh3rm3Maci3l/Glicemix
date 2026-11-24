@@ -30,6 +30,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -67,7 +69,7 @@ enum class Alinha { ESQ, CENTRO, DIR }
 
 fun DrawScope.texto(
     m: TextMeasurer, s: String, x: Float, y: Float, cor: Color,
-    h: Alinha = Alinha.CENTRO, tamanho: TextUnit = 10.sp, peso: FontWeight = FontWeight.Normal,
+    h: Alinha = Alinha.CENTRO, tamanho: TextUnit = 12.sp, peso: FontWeight = FontWeight.Normal,
 ) {
     val r = m.measure(s, TextStyle(color = cor, fontSize = tamanho, fontWeight = peso))
     val dx = when (h) {
@@ -100,6 +102,8 @@ fun MolduraGrafico(
     chave: Any?,
     modifier: Modifier = Modifier,
     aoTocar: (Density.(Offset, Size) -> String?)? = null,
+    /** Resumo falado pelo leitor de tela (TalkBack): o desenho em si não é legível para ele. */
+    descricao: String = "",
     desenhar: DrawScope.(TextMeasurer) -> Unit,
 ) {
     val medidor = rememberTextMeasurer()
@@ -115,6 +119,7 @@ fun MolduraGrafico(
                 })
             }
         }
+        if (descricao.isNotBlank()) mod = mod.semantics { contentDescription = descricao }
         Canvas(mod) { desenhar(medidor) }
         if (aoTocar != null) {
             Text(

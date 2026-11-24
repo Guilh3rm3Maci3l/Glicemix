@@ -7,6 +7,10 @@ import glicemix.analise.Nivel
 import glicemix.analise.Turno
 import glicemix.model.Configuracao
 import glicemix.model.Faixa
+import glicemix.model.Atividade
+import glicemix.model.Dose
+import glicemix.model.Medicao
+import glicemix.model.Refeicao
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -105,6 +109,8 @@ class GeradorRelatorio(
         tempoNoAlvoPorDia()
         tabelas(r)
         padroes()
+        marcados()
+        perguntas()
         aviso()
         return pagina
     }
@@ -340,6 +346,45 @@ class GeradorRelatorio(
             if (ev.isNotEmpty()) { yy += 3; ev.forEach { s.texto(it, x, yy, 8f, CoresRelatorio.SUAVE); yy += 10f } }
             y += h + 4
         }
+    }
+
+    /** Registros que a pessoa marcou com a estrela "levar para a consulta". */
+    private fun marcados() {
+        val lista = (d.medicoes + d.refeicoes + d.doses + d.atividades).filter { it.marcado }.sortedBy { it.dataHora }
+        if (lista.isEmpty()) return
+        titulo("Registros marcados para a consulta", junto = 60f, sub = "Eventos que a pessoa quis destacar, com as circunstâncias anotadas.")
+        val hora = DateTimeFormatter.ofPattern("dd/MM HH:mm")
+        lista.forEach { r ->
+            val (titulo, detalhe) = when (r) {
+                is Medicao -> "Glicemia ${r.valor} mg/dL" to r.momento.rotulo
+                is Refeicao -> "${r.tipo.rotulo}: ${r.descricao.ifBlank { "sem descrição" }}" to "${f0(r.carboidratos)} g de carboidrato"
+                is Dose -> "${r.medicamento} ${f0(r.quantidade)} ${r.unidade}" to r.tipo.rotulo
+                is Atividade -> "${r.tipo} (${r.intensidade.rotulo})" to "${r.duracaoMin} min"
+            }
+            val extra = listOfNotNull(
+                detalhe, r.tags.takeIf { it.isNotEmpty() }?.joinToString(", "), r.observacao.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+            val linhas = quebrar(extra, CONTEUDO - 12, 8.5f)
+            val h = 16f + linhas.size * 11f + 6f
+            espaco(h)
+            s.retangulo(M, y, 3f, h - 4, CoresRelatorio.faixa(Faixa.ALTA), 1.5f)
+            s.texto("${r.dataHora.format(hora)}  ·  $titulo", M + 12, y + 11, 9.5f, CoresRelatorio.TEXTO, negrito = true)
+            var yy = y + 22
+            linhas.forEach { s.texto(it, M + 12, yy, 8.5f, CoresRelatorio.SUAVE); yy += 11f }
+            y += h + 2
+        }
+        y += 12
+    }
+
+    /** Espaço pautado para a pessoa anotar dúvidas à mão antes da consulta. */
+    private fun perguntas() {
+        titulo("Perguntas para a consulta", junto = 90f, sub = "Espaço para anotar dúvidas e combinados.")
+        espaco(5 * 22f)
+        repeat(5) {
+            y += 22f
+            s.linha(M, y, LARGURA - M, y, CoresRelatorio.GRADE, 0.6f)
+        }
+        y += 14
     }
 
     private fun aviso() {
