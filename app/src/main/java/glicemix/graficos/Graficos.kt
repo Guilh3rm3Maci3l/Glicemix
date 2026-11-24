@@ -63,6 +63,8 @@ fun GraficoLinhaTempo(d: Dados, inicio: LocalDateTime, fim: LocalDateTime, modif
 
     MolduraGrafico(
         altura, chave = Triple(ms, inicio, cfg), modifier = modifier,
+        descricao = "Glicemia ao longo do tempo: ${ms.size} medições, de ${ms.minOf { it.valor }} a ${ms.maxOf { it.valor }} mg/dL, média ${ms.map { it.valor }.average().roundToInt()}. " +
+            "${ms.count { cfg.classificar(it.valor) == Faixa.NO_ALVO } * 100 / ms.size}% no alvo.",
         aoTocar = { p, s ->
             val a = area(s)
             val x = Escala(0f, total, a.left, a.right); val y = Escala(40f, yMax, a.bottom, a.top)
@@ -171,6 +173,7 @@ fun GraficoPerfilDiario(perfil: List<Estatistica.PontoPerfil>, cfg: Configuracao
     val cor = Cores.primaria
     MolduraGrafico(
         altura, chave = perfil, modifier = modifier,
+        descricao = "Perfil glicêmico do dia: mediana de ${perfil.minOf { it.p50 }.roundToInt()} a ${perfil.maxOf { it.p50 }.roundToInt()} mg/dL ao longo das 24 horas.",
         aoTocar = { p, s ->
             val a = area(s)
             val h = Escala(0f, 24f, a.left, a.right).inversa(p.x).toInt()
@@ -213,6 +216,7 @@ fun GraficoTempoNoAlvoDiario(dias: List<Estatistica.Dia>, modifier: Modifier = M
     fun Density.area(s: Size) = Rect(34.dp.toPx(), 8.dp.toPx(), s.width - 4.dp.toPx(), s.height - 22.dp.toPx())
     MolduraGrafico(
         altura, chave = dias, modifier = modifier,
+        descricao = "Tempo nas faixas em ${dias.size} dias. Média de ${(dias.sumOf { it.porFaixa[Faixa.NO_ALVO] ?: 0.0 } / dias.size).roundToInt()}% no alvo por dia.",
         aoTocar = { p, s ->
             val a = area(s)
             val i = ((p.x - a.left) / (a.width / dias.size)).toInt()
@@ -254,6 +258,7 @@ fun GraficoHistograma(valores: List<Int>, cfg: Configuracao, modifier: Modifier 
     fun Density.area(s: Size) = Rect(30.dp.toPx(), 8.dp.toPx(), s.width - 6.dp.toPx(), s.height - 22.dp.toPx())
     MolduraGrafico(
         altura, chave = valores, modifier = modifier,
+        descricao = "Distribuição de ${valores.size} leituras, de ${valores.min()} a ${valores.max()} mg/dL, média ${valores.average().roundToInt()}.",
         aoTocar = { p, s ->
             val a = area(s)
             val v = Escala(ini.toFloat(), fim.toFloat(), a.left, a.right).inversa(p.x)
@@ -293,7 +298,10 @@ fun GraficoBarras(itens: List<ItemBarra>, modifier: Modifier = Modifier, unidade
             val i = ((p.y - 4.dp.toPx()) / ((s.height - 8.dp.toPx()) / itens.size)).toInt()
             itens.getOrNull(i)?.let { "${it.rotulo}: ${it.detalhe}" }
         })
-    MolduraGrafico(altura, chave = itens, modifier = modifier, aoTocar = toque) { m ->
+    MolduraGrafico(
+        altura, chave = itens, modifier = modifier, aoTocar = toque,
+        descricao = itens.joinToString("; ") { "${it.rotulo}: ${it.valor.roundToInt()} $unidade" },
+    ) { m ->
         val estilo = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
         val larg = itens.maxOf { m.measure(it.rotulo, estilo).size.width } + 10.dp.toPx()
         val folgaEsq = if (minV < 0) 64.dp.toPx() else 0f; val folgaDir = if (maxV > 0) 64.dp.toPx() else 6.dp.toPx()
@@ -307,8 +315,8 @@ fun GraficoBarras(itens: List<ItemBarra>, modifier: Modifier = Modifier, unidade
             drawRoundRect(it.cor, Offset(xa, cy - bh / 2), Size(max(xb - xa, 2f), bh), CornerRadius(5.dp.toPx()))
             texto(m, it.rotulo, larg - 8.dp.toPx(), cy, c.texto, Alinha.DIR, 12.sp)
             val v = (if (comSinal && it.valor > 0) "+" else "") + it.valor.roundToInt() + " " + unidade
-            if (it.valor >= 0) texto(m, v, xb + 5.dp.toPx(), cy, c.texto, Alinha.ESQ, 11.sp, FontWeight.Bold)
-            else texto(m, v, xa - 5.dp.toPx(), cy, c.texto, Alinha.DIR, 11.sp, FontWeight.Bold)
+            if (it.valor >= 0) texto(m, v, xb + 5.dp.toPx(), cy, c.texto, Alinha.ESQ, 12.sp, FontWeight.Bold)
+            else texto(m, v, xa - 5.dp.toPx(), cy, c.texto, Alinha.DIR, 12.sp, FontWeight.Bold)
         }
     }
 }
@@ -329,6 +337,7 @@ fun GraficoDispersao(pontos: List<PontoDispersao>, rotuloX: String, modifier: Mo
     fun Density.area(s: Size) = Rect(34.dp.toPx(), 8.dp.toPx(), s.width - 8.dp.toPx(), s.height - 36.dp.toPx())
     MolduraGrafico(
         altura, chave = pontos, modifier = modifier,
+        descricao = "Carboidratos e variação da glicemia: ${pontos.size} refeições." + (reg?.let { " Tendência de ${"%.1f".format(it.inclinacao * 10).replace('.', ',')} mg/dL a cada 10 g." } ?: ""),
         aoTocar = { p, s ->
             val a = area(s)
             val x = Escala(0f, xMax, a.left, a.right); val y = Escala(yMin, yMaxV, a.bottom, a.top)
@@ -357,7 +366,10 @@ fun GraficoDispersao(pontos: List<PontoDispersao>, rotuloX: String, modifier: Mo
 fun BarraTempoNoAlvo(porFaixa: Map<Faixa, Double>, modifier: Modifier = Modifier) {
     if (porFaixa.values.sum() <= 0) { SemDados(60.dp); return }
     Column(modifier.fillMaxWidth()) {
-        MolduraGrafico(22.dp, chave = porFaixa, modifier = Modifier.clip(RoundedCornerShape(6.dp))) { _ ->
+        MolduraGrafico(
+            22.dp, chave = porFaixa, modifier = Modifier.clip(RoundedCornerShape(6.dp)),
+            descricao = Faixa.entries.reversed().joinToString(", ") { "${it.rotulo} ${(porFaixa[it] ?: 0.0).roundToInt()}%" },
+        ) { _ ->
             var acc = 0f
             Faixa.entries.forEach { f ->
                 val w = size.width * ((porFaixa[f] ?: 0.0) / 100.0).toFloat()

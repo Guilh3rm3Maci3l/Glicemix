@@ -103,8 +103,9 @@ object DadosExemplo {
         val carbs = (carbBase + ruido(6)).coerceAtLeast(5.0).roundToInt().toDouble()
         val bolus = (carbs / razao * 2).roundToInt() / 2.0 + (if (pre > 180) 1.0 else 0.0)
         if (medirAntes) out += Medicao(dataHora = inicio.minusMinutes(10), valor = pre.roundToInt().coerceIn(40, 450), momento = MomentoMedicao.PRE_REFEICAO)
-        out += Dose(dataHora = inicio.minusMinutes(10), tipo = TipoDose.ULTRARRAPIDA, medicamento = "Fiasp", quantidade = bolus, observacao = "${carbs.toInt()} g de carboidrato")
-        out += Refeicao(dataHora = inicio, tipo = tipo, descricao = desc, carboidratos = carbs)
+        val refeicao = Refeicao(dataHora = inicio, tipo = tipo, descricao = desc, carboidratos = carbs)
+        out += Dose(dataHora = inicio.minusMinutes(10), tipo = TipoDose.ULTRARRAPIDA, medicamento = "Fiasp", quantidade = bolus, observacao = "${carbs.toInt()} g de carboidrato", refeicaoId = refeicao.id)
+        out += refeicao
         val pos = pre + 25 + carbs * k - bolus * 42 + ruido(18)
         val tPos = inicio.plusMinutes(120L + rnd.nextInt(-15, 16))
         if (antesDeAgora(tPos)) out += Medicao(dataHora = tPos, valor = pos.roundToInt().coerceIn(40, 450), momento = MomentoMedicao.POS_REFEICAO)

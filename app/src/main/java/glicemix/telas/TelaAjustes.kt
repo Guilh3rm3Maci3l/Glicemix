@@ -129,6 +129,14 @@ fun TelaAjustes(vm: GlicemixViewModel) {
             }
         }
 
+        Cartao(titulo = "Fontes dos dados") {
+            Text(
+                "Valores de carboidratos dos alimentos: ${glicemix.data.BaseAlimentos.FONTE} Os itens cadastrados por você (rótulo ou receita própria) " +
+                    "são de sua responsabilidade: confira os números na embalagem.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         Text(
             "Glicemix ${versao(ctx)} · os padrões e estimativas são informativos e não substituem orientação médica.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

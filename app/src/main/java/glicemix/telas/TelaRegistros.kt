@@ -22,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Arrangement
+import glicemix.analise.Episodios
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +41,7 @@ import glicemix.model.Registro
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-private enum class Filtro(val rotulo: String) { TODOS("Todos"), MEDICOES("Medições"), REFEICOES("Refeições"), DOSES("Doses"), ATIVIDADES("Atividades") }
+private enum class Filtro(val rotulo: String) { TODOS("Todos"), MEDICOES("Medições"), REFEICOES("Refeições"), DOSES("Doses"), ATIVIDADES("Atividades"), MARCADOS("★ Consulta") }
 
 private val fCabecalho = DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM", ptBR)
 
@@ -48,10 +50,17 @@ fun TelaRegistros(vm: GlicemixViewModel, aoEditar: (Registro) -> Unit) {
     val d = vm.dados
     var filtro by rememberSaveable { mutableStateOf(Filtro.TODOS) }
     var busca by rememberSaveable { mutableStateOf("") }
+    var etiqueta by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val lista = remember(d, filtro, busca) {
+    val episodios = remember(d) { Episodios.de(d) }
+    val emEpisodios = remember(episodios) { Episodios.dosesEmEpisodios(episodios) }
+    val porRefeicao = remember(episodios) { episodios.associateBy { it.refeicao.id } }
+    val etiquetasUsadas = remember(d) { (d.medicoes + d.refeicoes + d.doses + d.atividades).flatMap { it.tags }.distinct().sorted() }
+
+    val lista = remember(d, filtro, busca, etiqueta, emEpisodios) {
         val q = busca.trim().lowercase()
-        (d.medicoes + d.refeicoes + d.doses + d.atividades)
+        // a dose ligada a uma refeição aparece dentro dela, não repetida na lista
+        (d.medicoes + d.refeicoes + d.doses.filter { it.id !in emEpisodios } + d.atividades)
             .filter { r ->
                 when (filtro) {
                     Filtro.TODOS -> true
@@ -59,8 +68,10 @@ fun TelaRegistros(vm: GlicemixViewModel, aoEditar: (Registro) -> Unit) {
                     Filtro.REFEICOES -> r is Refeicao
                     Filtro.DOSES -> r is Dose
                     Filtro.ATIVIDADES -> r is Atividade
+                    Filtro.MARCADOS -> r.marcado
                 }
             }
+            .filter { etiqueta == null || etiqueta in it.tags }
             .filter { q.isEmpty() || textoBusca(it).contains(q) }
             .sortedByDescending { it.dataHora }
     }
@@ -75,12 +86,20 @@ fun TelaRegistros(vm: GlicemixViewModel, aoEditar: (Registro) -> Unit) {
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             EscolhaChips(Filtro.entries, filtro, { it.rotulo }, { filtro = it }, Modifier.padding(top = 8.dp))
+            if (etiquetasUsadas.isNotEmpty()) {
+                EscolhaChips(listOf<String?>(null) + etiquetasUsadas, etiqueta, { it?.let { t -> "#$t" } ?: "Todas as circunstâncias" }, { etiqueta = it }, Modifier.padding(top = 4.dp))
+            }
             Text("${lista.size} registro(s) · ${vm.periodo.rotulo.lowercase()}", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
         }
         if (lista.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(32.dp)) {
-                Text("Nenhum registro encontrado. Use o botão Registrar para adicionar.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Nenhum registro encontrado", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (busca.isNotBlank() || filtro != Filtro.TODOS || etiqueta != null) "Tire algum filtro ou mude o período no topo da tela."
+                    else "Use o botão Registrar para adicionar a primeira glicemia, refeição, dose ou atividade.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
@@ -88,7 +107,9 @@ fun TelaRegistros(vm: GlicemixViewModel, aoEditar: (Registro) -> Unit) {
                     stickyHeader(key = "dia-$dia") { CabecalhoDia(dia, itens.size) }
                     items(itens, key = { it.id }) { r ->
                         Column(Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest)) {
-                            LinhaRegistro(r, d.config, Modifier.clickable { aoEditar(r) }.padding(horizontal = 16.dp))
+                            val ep = (r as? Refeicao)?.let { porRefeicao[it.id] }
+                            if (ep != null) LinhaEpisodio(ep, d.config, Modifier.clickable { aoEditar(r) }.padding(horizontal = 16.dp))
+                            else LinhaRegistro(r, d.config, Modifier.clickable { aoEditar(r) }.padding(horizontal = 16.dp))
                             HorizontalDivider(Modifier.padding(start = 66.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
@@ -119,4 +140,4 @@ private fun textoBusca(r: Registro): String = when (r) {
     is Refeicao -> "${r.tipo.rotulo} ${r.descricao} ${r.observacao}"
     is Dose -> "${r.medicamento} ${r.tipo.rotulo} ${r.observacao}"
     is Atividade -> "${r.tipo} ${r.intensidade.rotulo} ${r.observacao}"
-}.lowercase()
+}.plus(" " + r.tags.joinToString(" ")).lowercase()

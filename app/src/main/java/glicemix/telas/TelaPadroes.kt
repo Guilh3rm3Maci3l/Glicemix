@@ -88,7 +88,7 @@ private fun CartaoPadrao(p: Padrao) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Etiqueta(p.nivel.rotulo, cor)
                     Spacer(Modifier.width(8.dp))
-                    Text(p.categoria.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(p.categoria.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(p.titulo, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

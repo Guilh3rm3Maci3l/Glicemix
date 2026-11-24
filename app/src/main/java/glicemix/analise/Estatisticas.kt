@@ -27,6 +27,15 @@ class Dados(
     val vazio get() = medicoes.isEmpty() && refeicoes.isEmpty() && doses.isEmpty() && atividades.isEmpty()
 
     companion object {
+        /** Dados de um intervalo qualquer (início incluído, fim excluído): usado para comparar períodos. */
+        fun entre(repo: glicemix.data.Repositorio, ini: LocalDateTime, fim: LocalDateTime): Dados = Dados(
+            repo.medicoes.filter { it.dataHora >= ini && it.dataHora < fim },
+            repo.refeicoes.filter { it.dataHora >= ini && it.dataHora < fim },
+            repo.doses.filter { it.dataHora >= ini && it.dataHora < fim },
+            repo.atividades.filter { it.dataHora >= ini && it.dataHora < fim },
+            repo.configuracao,
+        )
+
         fun de(repo: glicemix.data.Repositorio, periodo: Periodo): Dados {
             val ini = periodo.inicio()
             return Dados(

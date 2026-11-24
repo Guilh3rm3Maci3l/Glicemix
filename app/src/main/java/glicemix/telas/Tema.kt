@@ -14,12 +14,15 @@ import glicemix.model.Medicao
 import glicemix.model.Refeicao
 import glicemix.model.Registro
 
-/** Mesma paleta do app desktop, para os dois apps “falarem a mesma língua”. */
+/**
+ * Paleta do app. Cor de significado clínico (faixas e níveis) nunca é a única pista: sempre vem com símbolo ou texto.
+ * Refeição usa bronze (e não roxo) e a basal é cinza-azulada, para não se confundir com o bolus azul.
+ */
 object Cores {
     val primaria = Color(0xFF0E7C86)
-    val refeicao = Color(0xFF7A5AF8)
+    val refeicao = Color(0xFF9A6B2F)
     val dose = Color(0xFF2E90FA)
-    val basal = Color(0xFF1849A9)
+    val basal = Color(0xFF475467)
     val atividade = Color(0xFFDD2590)
     val alvo = Color(0xFF1E9E61)
 

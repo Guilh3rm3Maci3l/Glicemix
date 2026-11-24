@@ -58,7 +58,7 @@ class AnalisadorPadroes(private val d: Dados) {
         val depois = d.medicoes.filter { min(r.dataHora, it.dataHora) in 90..180 }.minByOrNull { abs(min(r.dataHora, it.dataHora) - 120) }
         if (antes == null || depois == null) null
         else {
-            val bolus = d.doses.filter { it.tipo.ehBolus && min(it.dataHora, r.dataHora) in -20..30 }.sumOf { it.quantidade }
+            val bolus = d.doses.filter { it.tipo.ehBolus && (it.refeicaoId == r.id || (it.refeicaoId.isBlank() && min(it.dataHora, r.dataHora) in -20..30)) }.sumOf { it.quantidade }
             RespostaRefeicao(r, antes, depois, bolus)
         }
     }
@@ -92,8 +92,36 @@ class AnalisadorPadroes(private val d: Dados) {
         achados += tendencia()
         achados += fimDeSemana()
         achados += regularidadeBasal()
+        achados += porEtiqueta()
         achados += frequencia(r)
         return achados.sortedBy { it.nivel.ordinal }
+    }
+
+    /**
+     * Compara a média dos dias que tiveram uma circunstância (doença, estresse, álcool…) com a dos demais dias.
+     * Exige ao menos 2 dias etiquetados e 3 medições em cada lado.
+     */
+    private fun porEtiqueta(): List<Padrao> {
+        val todos: List<Registro> = d.medicoes + d.refeicoes + d.doses + d.atividades
+        val diasPorTag = todos.flatMap { r -> r.tags.map { it to r.dataHora.toLocalDate() } }.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+        val out = mutableListOf<Padrao>()
+        for ((tag, dias) in diasPorTag.entries.sortedBy { it.key }) {
+            val com = d.medicoes.filter { it.dataHora.toLocalDate() in dias }
+            val sem = d.medicoes.filter { it.dataHora.toLocalDate() !in dias }
+            if (dias.size < 2 || com.size < 3 || sem.size < 3) continue
+            val mCom = com.map { it.valor.toDouble() }.average()
+            val mSem = sem.map { it.valor.toDouble() }.average()
+            val dif = mCom - mSem
+            if (abs(dif) < 20) continue
+            val hipos = com.count { it.valor < cfg.alvoMin }
+            out += Padrao(
+                if (dif > 0) Nivel.ATENCAO else Nivel.INFO, "Circunstâncias",
+                "Em dias com “$tag” a glicemia fica ${if (dif > 0) "mais alta" else "mais baixa"}",
+                "A média nos ${dias.size} dias com “$tag” foi ${f0(mCom)} mg/dL, contra ${f0(mSem)} mg/dL nos demais dias (${if (dif > 0) "+" else "−"}${f0(abs(dif))} mg/dL).",
+                "${com.size} medições com a etiqueta" + if (hipos > 0) " · $hipos abaixo de ${cfg.alvoMin} mg/dL" else "",
+            )
+        }
+        return out
     }
 
     private fun controleGeral(r: Resumo): List<Padrao> {

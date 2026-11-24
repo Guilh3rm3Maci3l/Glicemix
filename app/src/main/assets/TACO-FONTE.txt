@@ -1,0 +1,6 @@
+Tabela Brasileira de Composição de Alimentos (TACO), 4ª edição revisada e ampliada.
+NEPA - Núcleo de Estudos e Pesquisas em Alimentação / UNICAMP, Campinas, SP, 2011.
+www.unicamp.br/nepa/taco
+A publicação permite a reprodução total ou parcial, desde que citada a fonte.
+Dados convertidos de IgorFZ/taco-br (MIT) e conferidos com marcelosanto/tabela_taco e brolesi/taco:
+os valores de carboidratos dos 597 alimentos coincidem nas três fontes.
