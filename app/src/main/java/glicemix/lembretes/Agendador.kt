@@ -35,7 +35,7 @@ object Agendador {
 
     fun agendarTodos(ctx: Context) {
         LembretesRepo(ctx).listar().forEach { agendar(ctx, it) }
-        ExamesRepo(ctx).agendarTodos()
+        CompromissosRepo(ctx).agendarTodos()
     }
 
     fun agendar(ctx: Context, l: Lembrete) {

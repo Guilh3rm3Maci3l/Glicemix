@@ -93,24 +93,26 @@ class NucleoTest {
         assertEquals(null, Episodios.referenciaDose(eps.take(2), TipoRefeicao.ALMOCO, 60.0, cfg, base))
     }
 
-    @Test fun exameCalculaVencimentoESituacao() {
+    @Test fun compromissoResumeSituacaoECsv() {
         val hoje = java.time.LocalDate.of(2026, 11, 24)
-        val e = Exame(nome = "HbA1c", intervaloMeses = 3, ultimo = java.time.LocalDate.of(2026, 8, 24))
-        assertEquals(java.time.LocalDate.of(2026, 11, 24), e.proximo)
-        assertEquals(SituacaoExame.PROXIMO, e.situacao(hoje))
-        assertEquals(SituacaoExame.ATRASADO, e.copy(ultimo = java.time.LocalDate.of(2026, 7, 1)).situacao(hoje))
-        assertEquals(SituacaoExame.EM_DIA, e.copy(ultimo = java.time.LocalDate.of(2026, 11, 1)).situacao(hoje))
-        assertEquals(SituacaoExame.SEM_DATA, e.copy(ultimo = null).situacao(hoje))
-        assertEquals(e.copy(nome = "Fundo; de olho"), ExamesCodec.decodificar(ExamesCodec.codificar(e.copy(nome = "Fundo; de olho"))))
-        assertEquals(null, ExamesCodec.decodificar("lixo"))
+        val c = Compromisso(tipo = TipoCompromisso.EXAME, nome = "HbA1c; jejum", data = java.time.LocalDate.of(2026, 11, 26), hora = java.time.LocalTime.of(7, 30), local = "Lab Central")
+        assertEquals(SituacaoCompromisso.EM_BREVE, c.situacao(hoje))
+        assertEquals("Em 2 dias (qui 26/11) às 07:30", c.resumo(hoje))
+        assertEquals("Amanhã", c.copy(data = hoje.plusDays(1), hora = null).resumo(hoje))
+        assertEquals("Hoje às 07:30", c.copy(data = hoje).resumo(hoje))
+        assertEquals(SituacaoCompromisso.PASSOU, c.copy(data = hoje.minusDays(3)).situacao(hoje))
+        assertEquals(c, CompromissosCodec.decodificar(CompromissosCodec.codificar(c)))
+        assertEquals(null, CompromissosCodec.decodificar("lixo"))
     }
 
-    @Test fun avisoDeExameAntecedeOVencimento() {
+    @Test fun avisoDeCompromissoAntecedeADataEPulaOQueJaPassou() {
         val agora = LocalDateTime.of(2026, 11, 24, 15, 0)
-        val longe = Exame(nome = "x", intervaloMeses = 12, ultimo = java.time.LocalDate.of(2026, 3, 1))
-        assertEquals(LocalDateTime.of(2027, 1, 30, 9, 0), glicemix.lembretes.ExamesRepo.quandoAvisar(longe, agora))
-        val perto = longe.copy(ultimo = java.time.LocalDate.of(2025, 12, 10))
-        assertEquals(LocalDateTime.of(2026, 11, 30, 9, 0), glicemix.lembretes.ExamesRepo.quandoAvisar(perto, agora)) // próxima segunda
-        assertEquals(null, glicemix.lembretes.ExamesRepo.quandoAvisar(longe.copy(ativo = false), agora))
+        val q = glicemix.lembretes.CompromissosRepo.Companion
+        val c = Compromisso(tipo = TipoCompromisso.CONSULTA, nome = "Endo", data = java.time.LocalDate.of(2026, 12, 10), hora = java.time.LocalTime.of(14, 0))
+        assertEquals(LocalDateTime.of(2026, 12, 9, 9, 0), q.quandoAvisar(c, agora))
+        assertEquals(LocalDateTime.of(2026, 12, 10, 12, 0), q.quandoAvisar(c.copy(antecedencia = Antecedencia.NO_DIA), agora))
+        assertEquals(LocalDateTime.of(2026, 12, 3, 9, 0), q.quandoAvisar(c.copy(antecedencia = Antecedencia.UMA_SEMANA), agora))
+        assertEquals(null, q.quandoAvisar(c.copy(data = java.time.LocalDate.of(2026, 11, 25)), agora)) // aviso de 1 dia antes já passou
+        assertEquals(null, q.quandoAvisar(c.copy(data = java.time.LocalDate.of(2026, 11, 1)), agora))  // já passou
     }
 }

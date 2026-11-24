@@ -171,6 +171,9 @@ fun TelaPainel(vm: GlicemixViewModel, aoVerPadroes: () -> Unit, aoNovo: (TipoReg
             }
         }
 
+        // 3b) Próximas consultas e exames
+        CartaoCompromissos()
+
         // 4) Padrões principais
         val principais = vm.padroes.filter { it.nivel != Nivel.POSITIVO }.take(3).ifEmpty { vm.padroes.take(3) }
         if (principais.isNotEmpty()) {

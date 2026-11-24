@@ -80,7 +80,6 @@ fun TelaAjustes(vm: GlicemixViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SecaoLembretes(vm)
-        SecaoExames(vm)
 
         Cartao(titulo = "Levar para a consulta", subtitulo = "O relatório usa o período escolhido no topo da tela (${vm.periodo.rotulo.lowercase()}).") {
             Button(onClick = {
